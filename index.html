@@ -159,6 +159,37 @@
   .panel select{ padding:9px 12px; border-radius:9px; background:#0c0a0f; color:var(--gold-2);
     border:1px solid var(--line); font-size:14px; font-weight:600; cursor:pointer; }
 
+  /* ===== 商品快選 ===== */
+  .qpick{ border:1px solid var(--gold); border-radius:14px; padding:14px 16px; margin:4px 0 18px;
+    background:rgba(216,179,106,.08); }
+  .qpick-head{ display:flex; align-items:center; justify-content:space-between; }
+  .qpick-head label{ font-size:15px; font-weight:700; color:var(--gold-2); letter-spacing:.06em; }
+  .qpick-desc{ font-size:11px; color:var(--muted); margin:2px 0 10px; line-height:1.5; }
+  .qpick select#prodSelect, .qpick #sheetUrl, .prod-mgr textarea{
+    width:100%; padding:10px 12px; border-radius:9px; background:#0c0a0f; color:var(--gold-2);
+    border:1px solid var(--line); font-size:15px; font-weight:600; }
+  #prodSelect{ cursor:pointer; }
+  .prod-mgr{ margin-top:14px; border-top:1px dashed var(--line); padding-top:14px; }
+  .pm-block{ margin-bottom:16px; }
+  .pm-title{ font-size:13px; font-weight:700; color:var(--ink); margin-bottom:3px; }
+  .pm-sub{ font-size:11px; color:var(--muted); line-height:1.5; margin-bottom:8px; }
+  .prod-mgr textarea{ resize:vertical; font-family:inherit; line-height:1.5; font-size:13px; font-weight:500; color:var(--ink); }
+  .prod-mgr #sheetUrl{ font-size:13px; font-weight:500; color:var(--ink); }
+  .pm-row{ display:flex; align-items:center; gap:10px; margin-top:8px; flex-wrap:wrap; }
+  .pm-lbl{ font-size:12px; color:var(--muted); }
+  .pm-row select{ padding:7px 10px; font-size:13px; }
+  .pm-chk{ font-size:12px; color:var(--ink); display:flex; align-items:center; gap:6px; cursor:pointer; }
+  .pm-chk input{ width:16px; height:16px; accent-color:var(--gold); }
+  .pm-foot{ display:flex; align-items:center; justify-content:space-between; margin-top:6px; }
+  .pm-count{ font-size:12px; color:var(--gold-2); }
+  .pm-msg{ font-size:12px; color:#7fd18b; margin-top:8px; min-height:1em; line-height:1.5; }
+  .pm-msg.err{ color:#ff8d6b; }
+  .mini-btn{ padding:8px 14px; border-radius:9px; border:1px solid var(--line); background:transparent;
+    color:var(--gold-2); font-size:13px; font-weight:600; cursor:pointer; }
+  .mini-btn:hover{ border-color:var(--gold); }
+  .mini-btn.solid{ background:linear-gradient(180deg,var(--gold-2),var(--gold-deep)); color:#2a1c06; border:none; }
+  .mini-btn.danger{ color:#ff8d6b; border-color:rgba(255,141,107,.4); }
+
   /* 通關碼輸入 */
   .pass-row{ display:flex; align-items:center; gap:8px; margin-top:8px; }
   .pass-row input{ flex:1; padding:12px 14px; border-radius:11px; background:#0c0a0f;
@@ -234,6 +265,46 @@
     <h2>後台設定</h2>
     <p class="hint">客人看不到這頁。設定本機保存於瀏覽器（不上傳）。<br>抽獎規則：售價達門檻的獎項才進池，再依機率權重抽出，一定中其一。</p>
 
+    <!-- ===== 商品快選 ===== -->
+    <div class="qpick">
+      <div class="qpick-head">
+        <label for="prodSelect">🛍 商品快選</label>
+        <button type="button" class="mini-btn" id="prodMgrToggle">管理清單 ▾</button>
+      </div>
+      <div class="qpick-desc">直播時選包包，自動帶入售價＋折價，畫面會顯示幾個較低的陪襯折數，<b>一定抽中該商品的折數</b>。</div>
+      <select id="prodSelect"><option value="">— 尚未匯入商品 —</option></select>
+
+      <div class="prod-mgr" id="prodMgr" style="display:none;">
+        <div class="pm-block">
+          <div class="pm-title">方式一：貼上清單（最穩）</div>
+          <div class="pm-sub">在 Google 試算表選「品名」與「折價金額(L欄)」兩欄一起複製，貼到下方。每件一行。<br>也可順便多選一欄「折後可售金額」當售價（可省略）。</div>
+          <textarea id="prodPaste" rows="5" placeholder="HERMES桃灰金釦鱷魚皮Birkin 30&#9;800000&#10;HERMES 5R玫瑰粉霧面鱷 PICOTIN 18&#9;30000"></textarea>
+          <div class="pm-row">
+            <span class="pm-lbl">金額單位</span>
+            <select id="pasteUnit">
+              <option value="yuan">元（例 800000）</option>
+              <option value="wan">萬（例 80）</option>
+            </select>
+            <button type="button" class="mini-btn solid" id="prodImport">匯入清單</button>
+          </div>
+        </div>
+        <div class="pm-block">
+          <div class="pm-title">方式二：連動 Google 試算表</div>
+          <div class="pm-sub">試算表 →「檔案 / 共用 / 發布到網路」→ 選「商品明細」工作表、格式選 <b>逗號分隔值 (.csv)</b>，把產生的網址貼到下方。</div>
+          <input type="text" id="sheetUrl" placeholder="https://docs.google.com/.../pub?gid=0&single=true&output=csv">
+          <div class="pm-row">
+            <label class="pm-chk"><input type="checkbox" id="sheetAuto"> 每次開啟自動同步</label>
+            <button type="button" class="mini-btn solid" id="sheetSync">立即同步</button>
+          </div>
+        </div>
+        <div class="pm-foot">
+          <span id="prodCount" class="pm-count">目前 0 件</span>
+          <button type="button" class="mini-btn danger" id="prodClear">清空清單</button>
+        </div>
+        <div class="pm-msg" id="prodMsg"></div>
+      </div>
+    </div>
+
     <div class="field">
       <div>
         <label for="price">本件商品售價</label>
@@ -295,6 +366,9 @@
     mirror: false,
     sound: { on:true, reveal:"cheer" },   // 音效開關 + 揭曉音效類型
     passcode: "1688",      // 開後台通關碼（可在此檔修改）
+    products: [],          // 商品快選清單：[{ name, price(萬), discount(萬) }]
+    sheetUrl: "",          // Google 試算表發布的 CSV 網址
+    sheetAuto: false,      // 每次開啟自動同步試算表
     tiers: [
       { id:"d30", amount:30, weight:60, minPrice:0   },
       { id:"d50", amount:50, weight:30, minPrice:80  },
@@ -598,12 +672,158 @@
   // ===== 鏡像 =====
   function applyMirror(){ document.body.classList.toggle("mirror", !!cfg.mirror); }
 
+  // ===== 商品快選 =====
+  function num(v){ return Number(String(v).replace(/[^0-9.\-]/g,"")) || 0; }
+  function toWan(v, unit){ return unit==="wan" ? v : v/10000; }
+  function escapeHtml(s){ return String(s).replace(/[&<>"]/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+
+  function splitRow(line){
+    if(line.indexOf("\t")>=0) return line.split("\t");
+    if(/\s{2,}/.test(line)) return line.split(/\s{2,}/);
+    var m = line.match(/^(.*?)[\s]+([0-9][0-9,\.]*)\s*$/);   // 單一空白：抓行尾數字
+    if(m) return [m[1], m[2]];
+    return [line];
+  }
+  function parsePaste(text, unit){
+    var out = [];
+    text.split(/\r?\n/).forEach(function(line){
+      if(!line.trim()) return;
+      var cells = splitRow(line).map(function(c){return c.trim();}).filter(function(c){return c!=="";});
+      var nums = [], name = "";
+      cells.forEach(function(c){
+        if(/^[0-9][0-9,\.]*$/.test(c)) nums.push(num(c));
+        else if(!name) name = c; else name += " " + c;
+      });
+      if(!name || nums.length===0) return;
+      var discount = toWan(nums[nums.length-1], unit);
+      var price = nums.length>=2 ? toWan(nums[0], unit) : 0;
+      if(discount<=0) return;
+      out.push({ name:name, price:Math.round(price), discount:Math.round(discount) });
+    });
+    return out;
+  }
+
+  function parseCSV(text){
+    var rows=[], row=[], cur="", q=false;
+    for(var i=0;i<text.length;i++){
+      var ch=text[i];
+      if(q){ if(ch==='"'){ if(text[i+1]==='"'){cur+='"';i++;} else q=false; } else cur+=ch; }
+      else{
+        if(ch==='"') q=true;
+        else if(ch===','){ row.push(cur); cur=""; }
+        else if(ch==='\n'){ row.push(cur); rows.push(row); row=[]; cur=""; }
+        else if(ch==='\r'){ /* skip */ }
+        else cur+=ch;
+      }
+    }
+    if(cur!==""||row.length){ row.push(cur); rows.push(row); }
+    return rows.filter(function(r){ return r.some(function(c){return c.trim()!=="";}); });
+  }
+  function productsFromCSV(text){
+    var rows = parseCSV(text);
+    if(rows.length<2) return [];
+    var hi = -1;
+    for(var i=0;i<rows.length;i++){ if(rows[i].some(function(c){return /品名|名稱/.test(c);})){ hi=i; break; } }
+    if(hi<0) hi=0;
+    var head = rows[hi].map(function(c){return c.trim();});
+    function findCol(tests){
+      for(var t=0;t<tests.length;t++){ for(var c=0;c<head.length;c++){ if(tests[t](head[c])) return c; } }
+      return -1;
+    }
+    var nameCol = findCol([function(h){return /品名|名稱/.test(h);}]);
+    var discCol = findCol([
+      function(h){return /總折|折價金額|折金額/.test(h);},
+      function(h){return /折/.test(h) && !/折扣後|折後/.test(h);},
+      function(h){return /折/.test(h);}
+    ]);
+    var priceCol = findCol([
+      function(h){return /折後可售|折後售價|折扣後售價|可售/.test(h);},
+      function(h){return /原售價|售價/.test(h);}
+    ]);
+    if(nameCol<0 || discCol<0) return [];
+    var out=[];
+    for(var r=hi+1;r<rows.length;r++){
+      var name=(rows[r][nameCol]||"").trim();
+      var disc=num(rows[r][discCol]);
+      if(!name || disc<=0) continue;
+      var price = priceCol>=0 ? num(rows[r][priceCol]) : 0;
+      out.push({ name:name, price:Math.round(price/10000), discount:Math.round(disc/10000) });
+    }
+    return out;
+  }
+
+  function setProducts(list, okMsg){
+    cfg.products = list; save(cfg);
+    renderProdSelect();
+    var msg=$("prodMsg");
+    if(msg){ msg.className="pm-msg"; msg.textContent = okMsg || ("已匯入 "+list.length+" 件商品"); }
+  }
+  function renderProdSelect(){
+    var sel=$("prodSelect"); if(!sel) return;
+    var list=cfg.products||[];
+    if(list.length===0){ sel.innerHTML='<option value="">— 尚未匯入商品 —</option>'; }
+    else{
+      var h='<option value="">— 請選擇商品 —</option>';
+      list.forEach(function(p,i){
+        h+='<option value="'+i+'">'+escapeHtml(p.name)+'（折'+p.discount+'萬）</option>';
+      });
+      sel.innerHTML=h;
+    }
+    var cnt=$("prodCount"); if(cnt) cnt.textContent="目前 "+list.length+" 件";
+  }
+
+  // 依目標折數產生「陪襯折數」：兩個較低的數字 + 目標數，只有目標數 100%
+  function niceStep(T){ return T>=100?20 : T>=50?10 : T>=20?5 : T>=8?2 : 1; }
+  function buildDecoyTiers(T){
+    T = Math.max(1, Math.round(T));
+    var step = niceStep(T);
+    function rnd(x){ return Math.round(x/step)*step; }
+    var arr=[];
+    [rnd(T*0.7), rnd(T*0.85)].forEach(function(v){
+      if(v>0 && v<T && arr.indexOf(v)<0) arr.push(v);
+    });
+    arr.push(T);
+    arr.sort(function(a,b){ return a-b; });
+    return arr.map(function(v,i){ return { id:"q"+i, amount:v, weight:(v===T?100:0), minPrice:0 }; });
+  }
+  function applyProduct(idx){
+    var p=cfg.products[idx]; if(!p) return;
+    cfg.price = p.price>0 ? p.price : Math.round(p.discount*1.5);
+    cfg.tiers = buildDecoyTiers(p.discount);
+    save(cfg);
+    renderPanel();
+    var sel=$("prodSelect"); if(sel) sel.value=String(idx);
+    var msg=$("prodMsg");
+    if(msg){ msg.className="pm-msg"; msg.textContent="已套用「"+p.name+"」：本次一定抽中折 "+p.discount+" 萬。可直接回舞台開抽。"; }
+  }
+
+  function syncSheet(url, silent){
+    var msg=$("prodMsg");
+    function show(t,err){ if(msg){ msg.className="pm-msg"+(err?" err":""); msg.textContent=t; } }
+    if(!url){ if(!silent) show("請先貼上 Google 試算表的 CSV 網址。",true); return; }
+    if(!silent) show("同步中…");
+    fetch(url, {cache:"no-store"}).then(function(r){
+      if(!r.ok) throw new Error("HTTP "+r.status);
+      return r.text();
+    }).then(function(txt){
+      var list=productsFromCSV(txt);
+      if(list.length===0){ show("讀到資料了，但找不到「品名」或「折價金額」欄，請確認試算表標題列含這兩欄。",true); return; }
+      setProducts(list, "已從試算表同步 "+list.length+" 件商品。");
+    }).catch(function(e){
+      show("同步失敗："+e.message+"。請確認試算表已『發布到網路』為 CSV，或改用上方貼上方式。",true);
+    });
+  }
+
   // ===== 後台面板 =====
   function renderPanel(){
     $("price").value = cfg.price;
     $("mirror").checked = !!cfg.mirror;
     $("soundOn").checked = !!cfg.sound.on;
     $("revealSound").value = cfg.sound.reveal;
+    $("sheetUrl").value = cfg.sheetUrl || "";
+    $("sheetAuto").checked = !!cfg.sheetAuto;
+    renderProdSelect();
     var html = "";
     cfg.tiers.forEach(function(t){
       html += '<div class="tier-card" data-card="'+t.id+'">'
@@ -711,6 +931,35 @@
   passMask.addEventListener("click", function(e){ if(e.target===passMask) passMask.classList.remove("open"); });
   $("closePanel").addEventListener("click", closePanel);
   $("savePanel").addEventListener("click", savePanel);
+
+  // 商品快選綁定
+  $("prodMgrToggle").addEventListener("click", function(){
+    var m=$("prodMgr");
+    var open = m.style.display==="none";
+    m.style.display = open ? "block" : "none";
+    this.textContent = open ? "管理清單 ▴" : "管理清單 ▾";
+  });
+  $("prodSelect").addEventListener("change", function(){
+    if(this.value!=="") applyProduct(Number(this.value));
+  });
+  $("prodImport").addEventListener("click", function(){
+    var list=parsePaste($("prodPaste").value, $("pasteUnit").value);
+    if(list.length===0){
+      var m=$("prodMsg"); m.className="pm-msg err";
+      m.textContent="解析不到商品，請確認每行有『品名』和『折價金額』（用 Tab 或從試算表整欄複製）。";
+      return;
+    }
+    setProducts(list, "已匯入 "+list.length+" 件商品，可在上方下拉選單挑選。");
+  });
+  $("prodClear").addEventListener("click", function(){ setProducts([], "已清空商品清單。"); });
+  $("sheetSync").addEventListener("click", function(){
+    cfg.sheetUrl=$("sheetUrl").value.trim(); cfg.sheetAuto=$("sheetAuto").checked; save(cfg);
+    syncSheet(cfg.sheetUrl,false);
+  });
+  $("sheetAuto").addEventListener("change", function(){
+    cfg.sheetAuto=this.checked; cfg.sheetUrl=$("sheetUrl").value.trim(); save(cfg);
+  });
+  $("sheetUrl").addEventListener("change", function(){ cfg.sheetUrl=this.value.trim(); save(cfg); });
   $("mirror").addEventListener("change", function(){ cfg.mirror=$("mirror").checked; applyMirror(); save(cfg); });
   $("soundOn").addEventListener("change", function(){ cfg.sound.on=$("soundOn").checked; if(cfg.sound.on) audioReady(); save(cfg); });
   $("revealSound").addEventListener("change", function(){
@@ -732,6 +981,9 @@
   // ===== 啟動 =====
   applyMirror();
   buildReel();
+  if(/^https?:/.test(location.protocol) && cfg.sheetAuto && cfg.sheetUrl){
+    syncSheet(cfg.sheetUrl, true);
+  }
 })();
 </script>
 </body>
