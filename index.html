@@ -1000,10 +1000,12 @@
     T = Math.max(0, Math.round(T));
     var step = niceStep(T);
     function rnd(x){ return Math.round(x/step)*step; }
-    var arr=[];
-    [rnd(T*0.7), rnd(T*0.85)].forEach(function(v){
-      if(v>0 && v<T && arr.indexOf(v)<0) arr.push(v);
-    });
+    var WANT = 2;                 // 固定 2 個陪襯（連目標共 3 排）
+    var arr = [];
+    function add(v){ if(v>0 && v<T && arr.indexOf(v)<0 && arr.length<WANT) arr.push(v); }
+    [0.6, 0.8, 0.45, 0.7].forEach(function(f){ add(rnd(T*f)); });
+    var v = T - step;  while(arr.length<WANT && v>0){ add(v); v-=step; }   // 不足就往下補
+    v = T - 1;         while(arr.length<WANT && v>0){ add(v); v-=1; }       // 再不足用 1 遞減
     arr.push(T);
     arr.sort(function(a,b){ return a-b; });
     return arr.map(function(v,i){ return { id:"q"+i, amount:v, weight:(v===T?100:0), minPrice:0 }; });
