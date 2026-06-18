@@ -485,17 +485,15 @@
     SYNC.applying=true; cfg=Object.assign(clone(DEFAULT), v); save(cfg); SYNC.applying=false;
     applyConfigToUI(); setSyncStatus();
   }
-  function broadcastDraw(chosen){
-    if(!SYNC.enabled||!SYNC.drawRef||!chosen) return;
+  function broadcastDraw(amount){
+    if(!SYNC.enabled||!SYNC.drawRef||amount==null) return;
     var id=Date.now().toString(36)+Math.random().toString(36).slice(2,6); SYNC.lastDrawId=id;
-    SYNC.drawRef.set({ id:id, amount:chosen.amount, slot:cfg.tiers.indexOf(chosen), by:SYNC.clientId, ts:Date.now() });
+    SYNC.drawRef.set({ id:id, amount:amount, by:SYNC.clientId, ts:Date.now() });
   }
   function onRemoteDraw(snap){
     var d=snap.val(); if(!d||d.by===SYNC.clientId) return;
     if(d.id===SYNC.lastDrawId) return; SYNC.lastDrawId=d.id;
-    var chosen=cfg.tiers[d.slot];
-    if(!chosen||chosen.amount!==d.amount){ chosen=null; for(var i=0;i<cfg.tiers.length;i++){ if(cfg.tiers[i].amount===d.amount){ chosen=cfg.tiers[i]; break; } } }
-    if(chosen) draw(chosen);   // 跟著轉到同一結果
+    if(typeof d.amount==="number") draw(d.amount);   // 跟著轉到同一折數
   }
   function applyConfigToUI(){
     applyMirror();
@@ -711,24 +709,32 @@
 
   // ===== 抽獎動畫 =====
   var spinning = false;
-  function draw(remoteChosen){
+  function draw(remoteAmount){
     audioReady();   // 在點擊手勢中解鎖音訊
     try{ if(cheerSrc) cheerSrc.stop(); }catch(e){}   // 停掉上一輪還在播的歡呼
     if(spinning) return;
-    var chosen = remoteChosen || pickTier();
-    if(!chosen){
-      resultEl.textContent = "（後台：此售價無符合獎項，請調整門檻）";
-      resultEl.classList.add("show");
-      return;
+    var amount;
+    if(typeof remoteAmount === "number"){     // 來自其他裝置的結果
+      amount = remoteAmount;
+    } else {
+      var chosen = pickTier();
+      if(!chosen){
+        resultEl.textContent = "（後台：此售價無符合獎項，請調整門檻）";
+        resultEl.classList.add("show");
+        return;
+      }
+      amount = chosen.amount;
+      broadcastDraw(amount);                  // 我發起的 → 廣播折數給其他裝置
     }
-    if(!remoteChosen) broadcastDraw(chosen);   // 我發起的 → 廣播給其他裝置同步
     spinning = true;
     drawBtn.disabled = true;
     machine.classList.remove("win");
     resultEl.classList.remove("show");
 
     var seqLen = cfg.tiers.length;
-    var slotPos = cfg.tiers.indexOf(chosen);
+    // 用「折數」找轉盤位置（不靠物件參照，跨裝置才不會對不上）
+    var slotPos = 0;
+    for(var si=0; si<cfg.tiers.length; si++){ if(cfg.tiers[si].amount===amount){ slotPos=si; break; } }
     // 先瞬間歸位到第二組（上方留一格淡入），再往下轉數圈停在 chosen，
     // 確保落點不會超出拉霸長度（SLOT_REPEAT 組）而停到空白區
     var startIndex = seqLen + slotPos;
@@ -757,18 +763,18 @@
       if(idxNow !== lastTickIdx){ lastTickIdx = idxNow; playTick(); }
       if(!revealFired && elapsed >= dur-REVEAL_LEAD){ revealFired = true; playReveal(); }  // 提早播歡呼
       if(p<1){ requestAnimationFrame(frame); }
-      else{ finish(chosen, targetIndex); }
+      else{ finish(amount, targetIndex); }
     }
     requestAnimationFrame(frame);
   }
 
-  function finish(chosen, idx){
+  function finish(amount, idx){
     currentIndex = idx;
     spinning = false;
     drawBtn.disabled = false;
     machine.classList.add("win");
     var c = cfg.current;
-    if(c && chosen.amount === c.discount){
+    if(c && Number(amount) === Number(c.discount)){
       var orig = c.listPrice || (c.price + c.discount*10000);
       resultEl.innerHTML =
         '<div class="rname">'+escapeHtml(c.name)+'</div>'
@@ -776,7 +782,7 @@
       +   '<span class="rcut">現折 <b>'+c.discount+'</b> 萬</span></div>'
       + '<div class="rfinal">直播價 NT$ <span class="rwin">'+fmtNum(c.price)+'</span></div>';
     } else {
-      resultEl.innerHTML = '恭喜！本件 <b>現折 <span class="rwin">'+chosen.amount+'</span> 萬</b>';
+      resultEl.innerHTML = '恭喜！本件 <b>現折 <span class="rwin">'+amount+'</span> 萬</b>';
     }
     resultEl.classList.add("show");
     burst();
@@ -967,6 +973,10 @@
       sel.innerHTML=h;
     }
     var cnt=$("prodCount"); if(cnt) cnt.textContent="目前 "+list.length+" 件";
+    // 反映目前選定的商品（含跨裝置同步過來的選擇）
+    if(cfg.currentName){
+      for(var i=0;i<list.length;i++){ if(list[i].name===cfg.currentName){ sel.value=String(i); break; } }
+    } else { sel.value=""; }
   }
 
   // 依目標折數產生「陪襯折數」：兩個較低的數字 + 目標數，只有目標數 100%
@@ -1153,7 +1163,7 @@
   }
 
   // ===== 綁定 =====
-  drawBtn.addEventListener("click", draw);
+  drawBtn.addEventListener("click", function(){ draw(); });
   gear.addEventListener("click", openPanel);
   $("eyeBtn").addEventListener("click", function(){
     passInput.type = (passInput.type === "password") ? "text" : "password";
