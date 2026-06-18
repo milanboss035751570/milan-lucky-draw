@@ -212,6 +212,10 @@
   .switch input:checked::after{ left:20px; }
 
   .panel-actions{ display:flex; gap:10px; margin-top:18px; }
+  .sync-row{ display:flex; gap:8px; align-items:center; }
+  .sync-row input{ flex:1; padding:9px 11px; border-radius:9px; background:#0c0a0f; border:1px solid var(--line); color:var(--gold-2); font-size:14px; font-weight:600; }
+  .sync-status{ font-size:12px; color:var(--muted); }
+  .sync-status.ok{ color:#7fd18b; } .sync-status.err{ color:#ff8d6b; }
   .btn{ flex:1; padding:12px; border-radius:11px; border:1px solid var(--line); cursor:pointer; font-size:14px; font-weight:600; }
   .btn.primary{ background:linear-gradient(180deg,var(--gold-2),var(--gold-deep)); color:#2a1c06; border:none; }
   .btn.ghost{ background:transparent; color:var(--muted); }
@@ -220,6 +224,8 @@
 
   #confetti{ position:fixed; inset:0; z-index:25; pointer-events:none; }
 </style>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
 </head>
 <body>
 
@@ -354,6 +360,18 @@
       <span class="switch"><input type="checkbox" id="mirror"></span>
     </div>
 
+    <div class="field" style="border:none; flex-direction:column; align-items:stretch; gap:10px;">
+      <div style="display:flex; align-items:center; justify-content:space-between;">
+        <div><label for="syncOn">雲端同步</label><div class="desc">跨裝置同步設定＋商品清單（兩台輸入相同房間代碼）</div></div>
+        <span class="switch"><input type="checkbox" id="syncOn"></span>
+      </div>
+      <div class="sync-row">
+        <input type="text" id="syncRoom" placeholder="房間代碼">
+        <button type="button" class="mini-btn solid" id="syncPushBtn">⬆ 上傳本機</button>
+      </div>
+      <div class="sync-status" id="syncStatus">未連線</div>
+    </div>
+
     <div class="warn" id="warn"></div>
 
     <div class="panel-actions">
@@ -394,10 +412,104 @@
       return Object.assign(clone(DEFAULT), s);
     }catch(e){ return clone(DEFAULT); }
   }
-  function save(s){ localStorage.setItem(KEY, JSON.stringify(s)); }
+  function save(s){ localStorage.setItem(KEY, JSON.stringify(s)); if(typeof SYNC!=="undefined" && SYNC && SYNC.enabled && !SYNC.applying) syncPushDebounced(); }
   function clone(o){ return JSON.parse(JSON.stringify(o)); }
 
   var cfg = load();
+
+  // ===== 雲端即時同步（Firebase Realtime Database）=====
+  var FIREBASE_CONFIG = {
+    apiKey: "AIzaSyAV8JdZQseqgJ-wkbYhY4-GPiLnkmCBa9g",
+    authDomain: "milan-lucky-draw.firebaseapp.com",
+    databaseURL: "https://milan-lucky-draw-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "milan-lucky-draw",
+    storageBucket: "milan-lucky-draw.firebasestorage.app",
+    messagingSenderId: "247569512002",
+    appId: "1:247569512002:web:e69371330a832216e85fdb"
+  };
+  var SYNC_KEY = "milan_sync_v1";
+  var SYNC = (function(){
+    var s={}; try{ s=JSON.parse(localStorage.getItem(SYNC_KEY))||{}; }catch(e){ s={}; }
+    return { enabled:!!s.enabled, room:s.room||"milan",
+      clientId: s.clientId || (Math.random().toString(36).slice(2)+Date.now().toString(36)),
+      applying:false, db:null, stateRef:null, drawRef:null, lastDrawId:null, ready:false };
+  })();
+  function saveSyncPrefs(){ localStorage.setItem(SYNC_KEY, JSON.stringify({ enabled:SYNC.enabled, room:SYNC.room, clientId:SYNC.clientId })); }
+  function setSyncStatus(txt, cls){
+    var el=document.getElementById("syncStatus"); if(!el) return;
+    if(txt===undefined) txt = SYNC.enabled ? (SYNC.ready ? "已連線（房間："+SYNC.room+"）" : "連線中…") : "未連線";
+    if(cls===undefined) cls = (SYNC.enabled && SYNC.ready) ? "ok" : "";
+    el.textContent = txt; el.className = "sync-status" + (cls? " "+cls : "");
+  }
+  function renderSyncUI(){
+    if(!document.getElementById("syncOn")) return;
+    document.getElementById("syncOn").checked = SYNC.enabled;
+    document.getElementById("syncRoom").value = SYNC.room;
+    setSyncStatus();
+  }
+  function syncInit(){
+    if(!SYNC.enabled){ setSyncStatus(); return; }
+    if(typeof firebase==="undefined" || !firebase.initializeApp){ setSyncStatus("無法載入 Firebase（檢查網路）","err"); return; }
+    try{
+      if(!(firebase.apps && firebase.apps.length)) firebase.initializeApp(FIREBASE_CONFIG);
+      SYNC.db = firebase.database();
+    }catch(e){ setSyncStatus("Firebase 初始化失敗","err"); return; }
+    syncAttach();
+  }
+  function syncDetach(){
+    if(SYNC.stateRef) SYNC.stateRef.off();
+    if(SYNC.drawRef) SYNC.drawRef.off();
+    SYNC.stateRef=SYNC.drawRef=null; SYNC.ready=false;
+  }
+  function syncAttach(){
+    syncDetach(); if(!SYNC.db) return;
+    var base = "rooms/" + (SYNC.room||"milan");
+    SYNC.stateRef = SYNC.db.ref(base+"/state");
+    SYNC.drawRef  = SYNC.db.ref(base+"/draw");
+    SYNC.stateRef.on("value", onRemoteState, function(){ setSyncStatus("讀取失敗（檢查資料庫規則）","err"); });
+    SYNC.drawRef.on("value", onRemoteDraw);
+    SYNC.ready=true; setSyncStatus();
+    SYNC.stateRef.once("value").then(function(snap){ if(!snap.exists()) syncPush(); });  // 雲端空→用本機種子
+  }
+  var _pushT=null;
+  function syncPushDebounced(){ if(!SYNC.enabled||!SYNC.stateRef) return; clearTimeout(_pushT); _pushT=setTimeout(syncPush, 400); }
+  function syncPush(){
+    if(!SYNC.enabled||!SYNC.stateRef) return;
+    var payload = clone(cfg); payload._by=SYNC.clientId; payload._ts=Date.now();
+    SYNC.stateRef.set(payload).catch(function(){ setSyncStatus("寫入失敗（檢查資料庫規則）","err"); });
+  }
+  function onRemoteState(snap){
+    var v=snap.val(); if(!v){ setSyncStatus(); return; }
+    if(v._by===SYNC.clientId){ setSyncStatus(); return; }   // 自己的回音
+    delete v._by; delete v._ts;
+    SYNC.applying=true; cfg=Object.assign(clone(DEFAULT), v); save(cfg); SYNC.applying=false;
+    applyConfigToUI(); setSyncStatus();
+  }
+  function broadcastDraw(chosen){
+    if(!SYNC.enabled||!SYNC.drawRef||!chosen) return;
+    var id=Date.now().toString(36)+Math.random().toString(36).slice(2,6); SYNC.lastDrawId=id;
+    SYNC.drawRef.set({ id:id, amount:chosen.amount, slot:cfg.tiers.indexOf(chosen), by:SYNC.clientId, ts:Date.now() });
+  }
+  function onRemoteDraw(snap){
+    var d=snap.val(); if(!d||d.by===SYNC.clientId) return;
+    if(d.id===SYNC.lastDrawId) return; SYNC.lastDrawId=d.id;
+    var chosen=cfg.tiers[d.slot];
+    if(!chosen||chosen.amount!==d.amount){ chosen=null; for(var i=0;i<cfg.tiers.length;i++){ if(cfg.tiers[i].amount===d.amount){ chosen=cfg.tiers[i]; break; } } }
+    if(chosen) draw(chosen);   // 跟著轉到同一結果
+  }
+  function applyConfigToUI(){
+    applyMirror();
+    if(!spinning) buildReel();
+    if(typeof renderProdSelect==="function") renderProdSelect();
+    var sel=document.getElementById("prodSelect");
+    if(sel && cfg.currentName){ for(var i=0;i<(cfg.products||[]).length;i++){ if(cfg.products[i].name===cfg.currentName){ sel.value=String(i); break; } } }
+    if(panelMask && panelMask.classList.contains("open")){ renderPanel(); renderSyncUI(); }
+  }
+  function setSyncEnabled(on){
+    SYNC.enabled=!!on; saveSyncPrefs();
+    if(SYNC.enabled) syncInit(); else { syncDetach(); setSyncStatus(); }
+  }
+  function setSyncRoom(room){ SYNC.room=(room||"milan").trim()||"milan"; saveSyncPrefs(); if(SYNC.enabled) syncInit(); }
 
   // ===== DOM =====
   var $ = function(id){ return document.getElementById(id); };
@@ -599,16 +711,17 @@
 
   // ===== 抽獎動畫 =====
   var spinning = false;
-  function draw(){
+  function draw(remoteChosen){
     audioReady();   // 在點擊手勢中解鎖音訊
     try{ if(cheerSrc) cheerSrc.stop(); }catch(e){}   // 停掉上一輪還在播的歡呼
     if(spinning) return;
-    var chosen = pickTier();
+    var chosen = remoteChosen || pickTier();
     if(!chosen){
       resultEl.textContent = "（後台：此售價無符合獎項，請調整門檻）";
       resultEl.classList.add("show");
       return;
     }
+    if(!remoteChosen) broadcastDraw(chosen);   // 我發起的 → 廣播給其他裝置同步
     spinning = true;
     drawBtn.disabled = true;
     machine.classList.remove("win");
@@ -1012,6 +1125,7 @@
   function openPanel(){
     // 已移除通關碼：直接開啟後台
     renderPanel();
+    renderSyncUI();
     panelMask.classList.add("open");
   }
   function submitPass(){
@@ -1051,6 +1165,12 @@
   passMask.addEventListener("click", function(e){ if(e.target===passMask) passMask.classList.remove("open"); });
   $("closePanel").addEventListener("click", closePanel);
   $("savePanel").addEventListener("click", savePanel);
+  $("syncOn").addEventListener("change", function(){ setSyncEnabled(this.checked); });
+  $("syncRoom").addEventListener("change", function(){ setSyncRoom(this.value); });
+  $("syncPushBtn").addEventListener("click", function(){
+    if(!SYNC.enabled){ SYNC.enabled=true; saveSyncPrefs(); $("syncOn").checked=true; syncInit(); }
+    syncPush(); setSyncStatus("已上傳本機到雲端","ok");
+  });
   $("addTier").addEventListener("click", addTier);
   $("price").addEventListener("input", function(){
     cfg.price = readPrice();
@@ -1108,6 +1228,7 @@
   // ===== 啟動 =====
   applyMirror();
   buildReel();
+  syncInit();   // 啟動雲端同步（若已啟用）
   if(cfg.sheetAuto && cfg.sheetUrl){
     syncSheet(cfg.sheetUrl, true);   // 每次開啟自動重抓最新清單（不限協定）
   }
