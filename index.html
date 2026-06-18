@@ -487,17 +487,19 @@
   }
   function broadcastDraw(amount){
     if(!SYNC.enabled||!SYNC.drawRef||amount==null) return;
+    syncPush();   // 先把最新狀態（選的商品/折數）立即推上去
     var id=Date.now().toString(36)+Math.random().toString(36).slice(2,6); SYNC.lastDrawId=id;
-    SYNC.drawRef.set({ id:id, amount:amount, by:SYNC.clientId, ts:Date.now() });
+    SYNC.drawRef.set({ id:id, amount:amount, cur:(cfg.current||null), by:SYNC.clientId, ts:Date.now() });
   }
   function onRemoteDraw(snap){
     var d=snap.val(); if(!d||d.by===SYNC.clientId) return;
     if(d.id===SYNC.lastDrawId) return; SYNC.lastDrawId=d.id;
-    if(typeof d.amount==="number") draw(d.amount);   // 跟著轉到同一折數
+    if(typeof d.amount==="number") draw(d.amount, d.cur||null);   // 跟著轉到同一折數＋商品
   }
   function applyConfigToUI(){
     applyMirror();
-    if(!spinning) buildReel();
+    // 只有折數真的改變才重建轉盤，避免同步訊息把剛抽完的位置重設掉
+    if(!spinning && tiersSig() !== reelSig) buildReel();
     if(typeof renderProdSelect==="function") renderProdSelect();
     var sel=document.getElementById("prodSelect");
     if(sel && cfg.currentName){ for(var i=0;i<(cfg.products||[]).length;i++){ if(cfg.products[i].name===cfg.currentName){ sel.value=String(i); break; } } }
@@ -523,7 +525,10 @@
     return '<span class="cut">現折</span><span class="amt">'+t.amount+'<small>萬</small></span>';
   }
 
+  var reelSig = "";
+  function tiersSig(){ return cfg.tiers.map(function(t){ return t.amount; }).join(","); }
   function buildReel(){
+    reelSig = tiersSig();
     order = [];
     var seq = cfg.tiers;
     var html = "";
@@ -709,13 +714,14 @@
 
   // ===== 抽獎動畫 =====
   var spinning = false;
-  function draw(remoteAmount){
+  function draw(remoteAmount, remoteProduct){
     audioReady();   // 在點擊手勢中解鎖音訊
     try{ if(cheerSrc) cheerSrc.stop(); }catch(e){}   // 停掉上一輪還在播的歡呼
     if(spinning) return;
-    var amount;
+    var amount, drawProduct;
     if(typeof remoteAmount === "number"){     // 來自其他裝置的結果
       amount = remoteAmount;
+      drawProduct = remoteProduct || null;    // 用廣播帶來的商品資料（不依賴狀態同步）
     } else {
       var chosen = pickTier();
       if(!chosen){
@@ -724,7 +730,8 @@
         return;
       }
       amount = chosen.amount;
-      broadcastDraw(amount);                  // 我發起的 → 廣播折數給其他裝置
+      drawProduct = cfg.current;              // 本機目前選定的商品
+      broadcastDraw(amount);                  // 我發起的 → 廣播折數＋商品給其他裝置
     }
     spinning = true;
     drawBtn.disabled = true;
@@ -733,8 +740,14 @@
 
     var seqLen = cfg.tiers.length;
     // 用「折數」找轉盤位置（不靠物件參照，跨裝置才不會對不上）
-    var slotPos = 0;
-    for(var si=0; si<cfg.tiers.length; si++){ if(cfg.tiers[si].amount===amount){ slotPos=si; break; } }
+    var slotPos = 0, found = false;
+    for(var si=0; si<cfg.tiers.length; si++){ if(cfg.tiers[si].amount===amount){ slotPos=si; found=true; break; } }
+    if(!found){   // 本機轉盤沒有這個折數（狀態還沒同步到）→ 臨時重建，確保停在正確折數
+      cfg.tiers = buildDecoyTiers(amount);
+      buildReel();
+      seqLen = cfg.tiers.length;
+      for(var sj=0; sj<cfg.tiers.length; sj++){ if(cfg.tiers[sj].amount===amount){ slotPos=sj; break; } }
+    }
     // 先瞬間歸位到第二組（上方留一格淡入），再往下轉數圈停在 chosen，
     // 確保落點不會超出拉霸長度（SLOT_REPEAT 組）而停到空白區
     var startIndex = seqLen + slotPos;
@@ -763,17 +776,17 @@
       if(idxNow !== lastTickIdx){ lastTickIdx = idxNow; playTick(); }
       if(!revealFired && elapsed >= dur-REVEAL_LEAD){ revealFired = true; playReveal(); }  // 提早播歡呼
       if(p<1){ requestAnimationFrame(frame); }
-      else{ finish(amount, targetIndex); }
+      else{ finish(amount, targetIndex, drawProduct); }
     }
     requestAnimationFrame(frame);
   }
 
-  function finish(amount, idx){
+  function finish(amount, idx, product){
     currentIndex = idx;
     spinning = false;
     drawBtn.disabled = false;
     machine.classList.add("win");
-    var c = cfg.current;
+    var c = product || cfg.current;
     if(c && Number(amount) === Number(c.discount)){
       var orig = c.listPrice || (c.price + c.discount*10000);
       resultEl.innerHTML =
