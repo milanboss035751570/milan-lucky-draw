@@ -96,6 +96,7 @@
   .result .rcut{ color:var(--gold-2); font-size:clamp(13px,1.8vw,17px); letter-spacing:.04em; }
   .result .rcut b{ color:#fff; font-size:1.25em; }
   .result .rfinal{ font-size:clamp(18px,2.6vw,26px); color:var(--gold-2); letter-spacing:.04em; }
+  .result .rprev{ font-size:clamp(13px,1.8vw,16px); color:var(--muted); letter-spacing:.08em; }
 
   /* ===== 抽獎鈕 ===== */
   .draw-btn{
@@ -498,14 +499,31 @@
     if(d.id===SYNC.lastDrawId) return; SYNC.lastDrawId=d.id;
     if(typeof d.amount==="number") draw(d.amount, d.cur||null);   // 跟著轉到同一折數＋商品
   }
+  // 舞台「準備開抽」畫面：秀出目前選定商品的品名（＋原價），清掉上一個結果
+  function showProductPreview(){
+    if(spinning) return;
+    machine.classList.remove("win");
+    var c = cfg.current;
+    if(c && c.name){
+      resultEl.innerHTML =
+        '<div class="rname">'+escapeHtml(c.name)+'</div>'
+      + '<div class="rprev">原價 NT$ '+fmtNum(c.listPrice||0)+'　·　準備開抽</div>';
+      resultEl.classList.add("show");
+    } else {
+      resultEl.classList.remove("show");
+    }
+  }
   function applyConfigToUI(){
     applyMirror();
+    var changed = tiersSig() !== reelSig;
     // 只有折數真的改變才重建轉盤，避免同步訊息把剛抽完的位置重設掉
-    if(!spinning && tiersSig() !== reelSig) buildReel();
+    if(!spinning && changed) buildReel();
     if(typeof renderProdSelect==="function") renderProdSelect();
     var sel=document.getElementById("prodSelect");
     if(sel && cfg.currentName){ for(var i=0;i<(cfg.products||[]).length;i++){ if(cfg.products[i].name===cfg.currentName){ sel.value=String(i); break; } } }
     if(panelMask && panelMask.classList.contains("open")){ renderPanel(); renderSyncUI(); }
+    // 換了商品／設定 → 舞台清掉上一個結果，秀出新商品
+    if(!spinning && changed) showProductPreview();
   }
   function setSyncEnabled(on){
     SYNC.enabled=!!on; saveSyncPrefs();
@@ -1085,6 +1103,8 @@
     cfg.tiers = buildTiersForProduct(p);
     save(cfg);
     renderPanel();
+    buildReel();              // 舞台轉盤換成新商品的折數
+    showProductPreview();     // 舞台清掉上一個結果、秀出新商品品名
     var sel=$("prodSelect"); if(sel) sel.value=String(idx);
     var msg=$("prodMsg");
     if(msg){ msg.className="pm-msg"; msg.textContent="已套用「"+p.name+"」：原價 "+fmtNum(listP)+" → 直播價 "+fmtNum(p.price)+"（現折 "+p.discount+" 萬）"; }
@@ -1255,8 +1275,7 @@
     applyMirror();
     buildReel();
     closePanel();
-    resultEl.classList.remove("show");
-    machine.classList.remove("win");
+    showProductPreview();   // 回舞台時秀出目前商品（或清空）
   }
 
   // ===== 綁定 =====
@@ -1335,6 +1354,7 @@
   // ===== 啟動 =====
   applyMirror();
   buildReel();
+  showProductPreview();   // 開啟時若已選商品就秀出「準備開抽」
   syncInit();   // 啟動雲端同步（若已啟用）
   if(cfg.sheetAuto && cfg.sheetUrl){
     syncSheet(cfg.sheetUrl, true);   // 每次開啟自動重抓最新清單（不限協定）
