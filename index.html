@@ -152,6 +152,8 @@
     background:#0c0a0f; border:1px solid var(--line); color:var(--gold-2);
     font-size:19px; font-weight:700; font-variant-numeric:tabular-nums; }
   .tc-name input:focus{ border-color:var(--gold); outline:none; }
+  .tc-name select.tc-unit{ padding:3px 4px; margin-left:2px; border-radius:7px; background:#0c0a0f;
+    border:1px solid var(--line); color:var(--gold-2); font-size:16px; font-weight:700; cursor:pointer; }
   .tc-prob{ font-size:24px; font-weight:700; color:#fff; font-variant-numeric:tabular-nums; line-height:1; }
   .tc-prob small{ font-size:12px; color:var(--muted); font-weight:500; margin-left:3px; }
   .tc-row{ display:flex; align-items:center; gap:12px; margin:9px 0; }
@@ -1139,7 +1141,11 @@
     cfg.tiers.forEach(function(t){
       html += '<div class="tier-card" data-card="'+t.id+'">'
         + '<div class="tc-head"><span class="tc-name">現折 '
-        +   '<input type="number" min="0" step="0.1" data-id="'+t.id+'" data-k="amount" value="'+t.amount+'"> 萬</span>'
+        +   '<input type="number" min="0" step="0.1" data-id="'+t.id+'" data-k="amount" value="'+(t.amount<1? Math.round(t.amount*1000)/100 : t.amount)+'">'
+        +   '<select class="tc-unit" data-id="'+t.id+'" data-k="unit">'
+        +     '<option value="萬"'+(t.amount<1?"":" selected")+'>萬</option>'
+        +     '<option value="千"'+(t.amount<1?" selected":"")+'>千</option>'
+        +   '</select></span>'
         +   '<span class="tc-prob" data-prob="'+t.id+'">—</span>'
         +   '<button type="button" class="tc-del" data-del="'+t.id+'" title="刪除這個選項" style="margin-left:10px; width:26px; height:26px; border-radius:50%; cursor:pointer; background:transparent; color:var(--muted); border:1px solid var(--line); font-size:14px; line-height:1;">✕</button></div>'
         + '<div class="tc-row"><span class="tc-lbl">中獎機率</span>'
@@ -1155,10 +1161,20 @@
   }
 
   function bindTierInputs(){
-    $("tierCards").querySelectorAll("input").forEach(function(inp){
-      inp.addEventListener("input", function(){
+    $("tierCards").querySelectorAll("input, select").forEach(function(inp){
+      var evt = inp.tagName==="SELECT" ? "change" : "input";
+      inp.addEventListener(evt, function(){
         var t = cfg.tiers.find(function(x){ return x.id===inp.dataset.id; });
-        t[inp.dataset.k] = Math.max(0, Number(inp.value)||0);
+        if(!t) return;
+        var k = inp.dataset.k;
+        if(k==="amount" || k==="unit"){           // 數字＋單位 → 換算回「萬」
+          var card = document.querySelector('[data-card="'+inp.dataset.id+'"]');
+          var n = Math.max(0, Number(card.querySelector('input[data-k="amount"]').value)||0);
+          var unit = card.querySelector('select[data-k="unit"]').value;
+          t.amount = unit==="千" ? n/10 : n;
+        } else {
+          t[k] = Math.max(0, Number(inp.value)||0);
+        }
         refreshTiers();
       });
     });
