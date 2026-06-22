@@ -522,8 +522,11 @@
   var centerOffset = 0;     // 讓中獎格落在中間那排的位移
   var order = [];           // 拉霸序列（tier 物件）
 
+  // 折數顯示：≥1 用「萬」（最多一位小數），<1 用「千」（如 0.6→6千）
+  function amtNum(a){ return a>=1 ? (Math.round(a*10)/10) : (Math.round(a*100)/10); }
+  function amtUnit(a){ return a>=1 ? "萬" : "千"; }
   function fmtSlot(t){
-    return '<span class="cut">現折</span><span class="amt">'+t.amount+'<small>萬</small></span>';
+    return '<span class="cut">現折</span><span class="amt">'+amtNum(t.amount)+'<small>'+amtUnit(t.amount)+'</small></span>';
   }
 
   var reelSig = "";
@@ -794,10 +797,10 @@
       resultEl.innerHTML =
         '<div class="rname">'+escapeHtml(c.name)+'</div>'
       + '<div class="rcompare"><span class="rorig">原價 NT$ '+fmtNum(orig)+'</span>'
-      +   '<span class="rcut">現折 <b>'+c.discount+'</b> 萬</span></div>'
+      +   '<span class="rcut">現折 <b>'+amtNum(c.discount)+'</b> '+amtUnit(c.discount)+'</span></div>'
       + '<div class="rfinal">直播價 NT$ <span class="rwin">'+fmtNum(c.price)+'</span></div>';
     } else {
-      resultEl.innerHTML = '恭喜！本件 <b>現折 <span class="rwin">'+amount+'</span> 萬</b>';
+      resultEl.innerHTML = '恭喜！本件 <b>現折 <span class="rwin">'+amtNum(amount)+'</span> '+amtUnit(amount)+'</b>';
     }
     resultEl.classList.add("show");
     burst();
@@ -920,8 +923,12 @@
       function(h){return /折後可售|折後售價|折扣後售價|可售/.test(h);}
     ]);
     var listCol = findCol([
-      function(h){return /原價|定價|吊牌/.test(h);},
+      function(h){return /原售價/.test(h);},
+      function(h){return /(原價|定價|吊牌)/.test(h) && !/專櫃/.test(h);},
       function(h){return /售價/.test(h) && !/折/.test(h);}
+    ]);
+    var wheelCol = findCol([
+      function(h){return /輪盤折價|輪盤|轉盤折價|轉盤/.test(h);}
     ]);
     if(nameCol<0) return [];
     var out=[];
@@ -934,7 +941,8 @@
       if(!listP && sellP) listP = sellP + disc;               // 沒原價→回推
       if(!sellP) sellP = Math.max(0, listP - disc);           // 沒折後→計算
       if(!listP && !sellP) continue;                          // 整列無價格→略過
-      out.push({ name:name, listPrice:Math.round(listP), price:Math.round(sellP), discount:Math.round(disc/10000) });
+      var wheel = wheelCol>=0 ? parseWheel(rows[r][wheelCol]) : [];   // 指定的轉盤折數(萬)
+      out.push({ name:name, listPrice:Math.round(listP), price:Math.round(sellP), discount:Math.round(disc/10000), wheel:wheel });
     }
     return out;
   }
@@ -983,7 +991,7 @@
     else{
       var h='<option value="">— 請選擇商品 —</option>';
       list.forEach(function(p,i){
-        h+='<option value="'+i+'">'+escapeHtml(p.name)+'（折'+p.discount+'萬）</option>';
+        h+='<option value="'+i+'">'+escapeHtml(p.name)+'（折'+amtNum(p.discount)+amtUnit(p.discount)+'）</option>';
       });
       sel.innerHTML=h;
     }
@@ -995,7 +1003,63 @@
   }
 
   // 依目標折數產生「陪襯折數」：兩個較低的數字 + 目標數，只有目標數 100%
-  function niceStep(T){ return T>=100?20 : T>=50?10 : T>=20?5 : T>=8?2 : 1; }
+  // 解析中文／阿拉伯數字字串 → 數值（元）：支援 十百千萬、口語尾數(七千五=7500)
+  function cjkToNum(s){
+    s = String(s).trim().replace(/[,，\s]/g,"");
+    if(!s) return NaN;
+    if(/^[0-9][0-9.]*$/.test(s)) return Number(s);
+    var dig={零:0,'〇':0,一:1,二:2,兩:2,两:2,三:3,四:4,五:5,六:6,七:7,八:8,九:9};
+    var unit={十:10,百:100,千:1000,萬:10000,万:10000};
+    var total=0, section=0, number=0, lastUnit=1, saw=false;
+    for(var i=0;i<s.length;i++){
+      var ch=s[i];
+      if(/[0-9]/.test(ch)){ var j=i,ns=""; while(j<s.length&&/[0-9.]/.test(s[j])){ns+=s[j];j++;} number=Number(ns); i=j-1; saw=true; }
+      else if(dig[ch]!==undefined){ number=dig[ch]; saw=true; }
+      else if(unit[ch]!==undefined){ var u=unit[ch];
+        if(u>=10000){ section=(section+number)*u; total+=section; section=0; number=0; }
+        else { section += (number||1)*u; number=0; }
+        lastUnit=u; saw=true;
+      }
+    }
+    if(!saw) return NaN;
+    total += section + (number!==0 ? number*(lastUnit>1?lastUnit/10:1) : 0);
+    return total;
+  }
+  // 單一 token → 萬（無單位時套用預設單位）
+  function tokenToWan(tok, defUnit){
+    tok = String(tok).trim();
+    if(!tok) return NaN;
+    if(!/[十百千萬万]/.test(tok)){
+      var n = /^[0-9][0-9.]*$/.test(tok) ? Number(tok) : cjkToNum(tok);
+      return isNaN(n) ? NaN : (defUnit==="千" ? n/10 : n);
+    }
+    var y = cjkToNum(tok);
+    return isNaN(y) ? NaN : y/10000;
+  }
+  // 「14/16/18萬」→[14,16,18]；「5千/七千五/一萬」→[0.5,0.75,1]（單位：萬）
+  function parseWheel(str){
+    str = String(str==null?"":str).trim();
+    if(!str) return [];
+    var toks = str.split(/[\/,，、|\s]+/).filter(function(t){return t!=="";});
+    if(!toks.length) return [];
+    var defUnit="萬";
+    for(var i=toks.length-1;i>=0;i--){ if(/萬|万/.test(toks[i])){defUnit="萬";break;} if(/千/.test(toks[i])){defUnit="千";break;} }
+    var out=[];
+    toks.forEach(function(t){ var v=tokenToWan(t,defUnit); if(!isNaN(v)&&v>0) out.push(Math.round(v*1000)/1000); });
+    return out;
+  }
+  // 依商品「輪盤折價」建轉盤獎項；沒指定就自動湊陪襯
+  function tiersFromWheel(wheel, target){
+    var arr=(wheel||[]).slice();
+    if(!arr.some(function(a){return Math.abs(a-target)<0.001;})) arr.push(target);
+    arr=arr.filter(function(x,i,self){ return self.findIndex(function(y){return Math.abs(y-x)<0.001;})===i; });
+    arr.sort(function(a,b){return a-b;});
+    return arr.map(function(v,i){ return { id:"q"+i, amount:v, weight:(Math.abs(v-target)<0.001?100:0), minPrice:0 }; });
+  }
+  function buildTiersForProduct(p){
+    return (p.wheel && p.wheel.length) ? tiersFromWheel(p.wheel, p.discount) : buildDecoyTiers(p.discount);
+  }
+  function niceStep(T){ return T>=100?20 : T>=50?10 : T>=20?5 : T>=8?2 : T>=3?1 : T>=2?0.5 : 0.2; }
   function buildDecoyTiers(T){
     T = Math.max(0, Math.round(T));
     var step = niceStep(T);
@@ -1016,7 +1080,7 @@
     cfg.currentName = p.name;
     cfg.current = { name:p.name, listPrice:Math.round(listP), price:Math.round(p.price||0), discount:p.discount };
     cfg.price = p.price>0 ? p.price : listP;
-    cfg.tiers = buildDecoyTiers(p.discount);
+    cfg.tiers = buildTiersForProduct(p);
     save(cfg);
     renderPanel();
     var sel=$("prodSelect"); if(sel) sel.value=String(idx);
@@ -1075,7 +1139,7 @@
     cfg.tiers.forEach(function(t){
       html += '<div class="tier-card" data-card="'+t.id+'">'
         + '<div class="tc-head"><span class="tc-name">現折 '
-        +   '<input type="number" min="0" step="1" data-id="'+t.id+'" data-k="amount" value="'+t.amount+'"> 萬</span>'
+        +   '<input type="number" min="0" step="0.1" data-id="'+t.id+'" data-k="amount" value="'+t.amount+'"> 萬</span>'
         +   '<span class="tc-prob" data-prob="'+t.id+'">—</span>'
         +   '<button type="button" class="tc-del" data-del="'+t.id+'" title="刪除這個選項" style="margin-left:10px; width:26px; height:26px; border-radius:50%; cursor:pointer; background:transparent; color:var(--muted); border:1px solid var(--line); font-size:14px; line-height:1;">✕</button></div>'
         + '<div class="tc-row"><span class="tc-lbl">中獎機率</span>'
