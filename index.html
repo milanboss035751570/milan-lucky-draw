@@ -500,6 +500,8 @@
     if(typeof d.amount==="number") draw(d.amount, d.cur||null);   // 跟著轉到同一折數＋商品
   }
   // 舞台「準備開抽」畫面：秀出目前選定商品的品名（＋原價），清掉上一個結果
+  var lastUiKey = "";
+  function uiKey(){ return (cfg.currentName||"")+"|"+(cfg.pickId||"")+"|"+tiersSig(); }
   function showProductPreview(){
     if(spinning) return;
     machine.classList.remove("win");
@@ -512,18 +514,18 @@
     } else {
       resultEl.classList.remove("show");
     }
+    lastUiKey = uiKey();
   }
   function applyConfigToUI(){
     applyMirror();
-    var changed = tiersSig() !== reelSig;
     // 只有折數真的改變才重建轉盤，避免同步訊息把剛抽完的位置重設掉
-    if(!spinning && changed) buildReel();
+    if(!spinning && tiersSig() !== reelSig) buildReel();
     if(typeof renderProdSelect==="function") renderProdSelect();
     var sel=document.getElementById("prodSelect");
     if(sel && cfg.currentName){ for(var i=0;i<(cfg.products||[]).length;i++){ if(cfg.products[i].name===cfg.currentName){ sel.value=String(i); break; } } }
     if(panelMask && panelMask.classList.contains("open")){ renderPanel(); renderSyncUI(); }
-    // 換了商品／設定 → 舞台清掉上一個結果，秀出新商品
-    if(!spinning && changed) showProductPreview();
+    // 換了商品（品名／本次選取／折數有變）→ 舞台清舊結果、秀新商品；同狀態回音則不打擾
+    if(!spinning && uiKey() !== lastUiKey) showProductPreview();
   }
   function setSyncEnabled(on){
     SYNC.enabled=!!on; saveSyncPrefs();
@@ -1099,6 +1101,7 @@
     var listP = p.listPrice || (p.price + p.discount*10000) || p.price;
     cfg.currentName = p.name;
     cfg.current = { name:p.name, listPrice:Math.round(listP), price:Math.round(p.price||0), discount:p.discount };
+    cfg.pickId = Date.now();   // 每次選取唯一，讓舞台一定刷新（含同折數的不同商品）
     cfg.price = p.price>0 ? p.price : listP;
     cfg.tiers = buildTiersForProduct(p);
     save(cfg);
@@ -1313,7 +1316,7 @@
   });
   $("prodSelect").addEventListener("change", function(){
     if(this.value!==""){ applyProduct(Number(this.value)); }
-    else { cfg.current=null; cfg.currentName=""; save(cfg); }
+    else { cfg.current=null; cfg.currentName=""; cfg.pickId=Date.now(); save(cfg); showProductPreview(); }
   });
   $("prodImport").addEventListener("click", function(){
     var list=parsePaste($("prodPaste").value, $("pasteUnit").value);
